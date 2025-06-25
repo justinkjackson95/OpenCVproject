@@ -1,157 +1,119 @@
-"""
-    Image OCR to detect the cat no from images
-
-    Requires packages: cv2 (open cv), numpy, matplolib, pytesseract, and PIL (pillow)
-
-    Note: Pathnames need to be modified for your setup
-
-"""
-## this code needed to be stored into a function or and instance of the testing screen.
-##once the button "Start" is pressed, the code should capture image and populate the data in text box.
-import os
-
-os.system('cls' if os.name == 'nt' else 'clear')  # Clear screen
-
+import sys
 import re
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
+from PIL import Image
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QPushButton, QLabel, QTextEdit, QFileDialog
+)
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtCore import Qt
 from pytesseract import image_to_string
-from PIL import Image  # To install: conda install -c anaconda pillow
-from time import sleep
-from picamera import PiCamera
-
-# Path to tesseract
-#import sys
-
-#sys.path.append(r"C:\Program Files\Tesseract-OCR")
+import matplotlib.pyplot as plt
 
 
-#
-# This function loads image specified by fname and returns one channel as a numpy array
-#
 def load_image(fname):
-    # Load image
-    # print("Loading image", fname)
     x = Image.open(fname)
-    x = np.array(x).astype('float32')
-
-    return x
+    return np.array(x).astype('float32')
 
 
-#
-# Convert RGB image to grayscale
-#
 def rgb_to_grayscale(x):
-    # Extract R,G,B channels
-    r = x[:, :, 0]
-    g = x[:, :, 1]
-    b = x[:, :, 2]
-
-    # Form grayscale image
+    r, g, b = x[:, :, 0], x[:, :, 1], x[:, :, 2]
     gr = 0.2989 * r + 0.5870 * g + 0.1140 * b
-
-    gr_max = np.max(gr)
-    gr_min = np.min(gr)
-
-    gr = 255 * (gr - gr_min) / (gr_max - gr_min)
-    gr = gr.astype(np.uint8)
-
-    return gr
+    gr = 255 * (gr - gr.min()) / (gr.max() - gr.min())
+    return gr.astype(np.uint8)
 
 
-#
-# Image names to try
-#
-# this code can be replaced with capturing a live pic from pi cam then saving
-#image_fname = ['C:\\Users\\just4\\Documents\\GUIcode\\SrDesign_Milwaukee\\image273',
-#               'C:\\Users\\just4\\Documents\\GUIcode\\SrDesign_Milwaukee\\image282',
-#               'C:\\Users\\just4\\Documents\\GUIcode\\SrDesign_Milwaukee\\image253',
-#               'C:\\Users\\just4\\Documents\\GUIcode\\SrDesign_Milwaukee\\image2622']
-
-# raspberry pi code to grab image
-camera = PiCamera()
-#camera.rotation = 180
-camera.start_preview()
-sleep(5)
-camera.capture('/home/pi/Desktop/image.jpg')
-camera.stop_preview()
-
-image_fname = ['/home/pi/Desktop/image']
-
-#image_fname = Image.ope('/home/pi/Desktop/image.jpg')
-
-
-# Set up path so pytesseract can run
-#
-#pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract"
-
-#
-# Custom options pytesseract
-#
-custom_oem_psm_config = r' --psm 11 --user-patterns /home/pi/Desktop/GUIcode/SrDesign_Milwaukee/serial.patterns'
-
-#
-# Process images
-#
-for im in image_fname:
-
-    
-
-    # Load RGB image and convert to grayscale
-    x = load_image(im + ".jpg")
+def run_ocr(image_path, show_intermediates=False):
+    x = load_image(image_path)
     xg = rgb_to_grayscale(x)
-
-    # The cat number should be in this portion of the image
-    xg2 = xg[459:849, 599:1199]
-
-    # Run contrast limited adpative histogram equalization (CLAHE)
+    xg2 = xg[459:849, 599:1199]  # crop
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     xgc = clahe.apply(xg2)
 
+    # Optional: show intermediates
+    if show_intermediates:
+        fig = plt.figure(figsize=(14, 8))
+        ax1 = plt.subplot(221)
+        ax2 = plt.subplot(222)
+        ax3 = plt.subplot(223)
+        ax4 = plt.subplot(224)
 
-    fig = plt.figure(figsize=(14, 8))
-    ax1 = plt.subplot(221)
-    ax2 = plt.subplot(222)
-    ax3 = plt.subplot(223)
-    ax4 = plt.subplot(224)
-    # this displays the boxes ( i dont need right now)
-    ax1.imshow(x[:,:,0])
-    ax2.imshow(xg)
-    ax3.imshow(xg2)
-    ax4.imshow(xgc)
+        ax1.imshow(x[:, :, 0])
+        ax2.imshow(xg, cmap='gray')
+        ax3.imshow(xg2, cmap='gray')
+        ax4.imshow(xgc, cmap='gray')
 
-    ax1.set_title('Original:(red channel)' + im)
-    ax2.set_title('Grayscale')
-    ax3.set_title('Zoom')
-    ax4.set_title('CLAHE Zoom')
+        ax1.set_title("Red Channel")
+        ax2.set_title("Grayscale")
+        ax3.set_title("Zoomed Crop")
+        ax4.set_title("CLAHE Zoom")
 
-    plt.draw()
-    plt.show(block=False)
-    plt.pause(1.0)
+        plt.draw()
+        plt.show(block=False)
+        plt.pause(5)
+        plt.close()
 
-    #
-    # Search for the Serial Number
-    #
-    text1 = image_to_string(xgc, config=custom_oem_psm_config)
-    text2 = image_to_string(xg2, config=custom_oem_psm_config)
-    text12 = text1 + text2
+    config = r'--psm 11'
+    text = image_to_string(xgc, config=config) + image_to_string(xg2, config=config)
+    match = re.findall(r"\d{4}-\d{2}", text)
 
-    num_match12 = re.findall("[\d][\d][\d][\d][-][\d][\d]", text12)
+    model_to_torque = {
+        "2658-20": "750 in-lbs",
+        "2864-20": "1,400 in-lbs",
+        "2664-20": "1,275 ft-lbs",
+        "2867-20": "700 ft-lbs"
+        # add more mappings as needed
+    }
 
-    # output can be linked to screen showing match (even without the text)
-    if len(num_match12) > 0:
-        # instead of printing to screen, print to text box on gui
-        print(num_match12[0])
+    if match:
+        model = match[0]
+        torque = model_to_torque.get(model, "Unknown torque")
+        return model, torque, x.astype(np.uint8)
     else:
-        print("No match.")
-
-    print("\n")
+        return "No match", "N/A", x.astype(np.uint8)
 
 
+class OCRApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Tool Label OCR")
+        self.setGeometry(200, 200, 600, 600)
 
-## since we will start out with maybe 2 or 3 tools, we can add in if statements to correlate a torque value with the
-## matched model number
-##for example
-## if nummatch12[0] == "2658-20":
-## torque = 750
+        self.layout = QVBoxLayout()
+
+        self.start_button = QPushButton("Start OCR")
+        self.output_box = QTextEdit()
+        self.output_box.setReadOnly(True)
+        self.image_label = QLabel("Processed Image Will Appear Here")
+        self.image_label.setAlignment(Qt.AlignCenter)
+
+        self.layout.addWidget(self.start_button)
+        self.layout.addWidget(self.image_label)
+        self.layout.addWidget(self.output_box)
+
+        self.setLayout(self.layout)
+        self.start_button.clicked.connect(self.start_ocr)
+
+    def start_ocr(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.jpg *.png)")
+        if not file_path:
+            return
+
+        model, torque, img = run_ocr(file_path, show_intermediates=True)
+
+        self.output_box.setText(f"Model Number: {model}\nTorque Value: {torque}")
+
+        # Convert and display final image
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        h, w, ch = img_rgb.shape
+        bytes_per_line = ch * w
+        qt_img = QImage(img_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        self.image_label.setPixmap(QPixmap.fromImage(qt_img).scaled(500, 300, Qt.KeepAspectRatio))
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = OCRApp()
+    window.show()
+    sys.exit(app.exec_())
